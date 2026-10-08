@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sistema automático de monitoreo y respuesta ante aumento de temperatura con Arduino</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600&display=swap">
+<style>
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    --bg: #eef2f4;
+    --surface: #ffffff;
+    --ink: #14202a;
+    --muted: #4a5b69;
+    --line: #d3dce2;
+    --accent: #0f5c7a;
+    --accent-ink: #ffffff;
+    --g: #23a35a; --y: #f0b323; --r: #d4352a;
+    --warn-bg: #fff1cc; --warn-ink: #4d3800;
+    --head: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+    --body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* tarjeta de escena: siempre oscura */
+    --sc-bg: #0e1b26; --sc-ink: #e8eef2; --sc-mut: #9fb0bd; --sc-line: #24384a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b1217; --surface: #15202a; --ink: #e8eef2; --muted: #9fb0bd; --line: #26353f;
+      --accent: #6cc4e3; --accent-ink: #06222d; --warn-bg: #3a2f10; --warn-ink: #f3dd9c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b1217; --surface: #15202a; --ink: #e8eef2; --muted: #9fb0bd; --line: #26353f;
+    --accent: #6cc4e3; --accent-ink: #06222d; --warn-bg: #3a2f10; --warn-ink: #f3dd9c;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.58; -webkit-text-size-adjust: 100%; }
+  main { max-width: 640px; margin: 0 auto; padding: 22px 16px 56px; }
+  h1, h2, h3 { font-family: var(--head); line-height: 1.12; margin: 0; letter-spacing: -0.01em; }
+  h1 { font-size: clamp(1.7rem, 7vw, 2.4rem); font-weight: 800; }
+  h2 { font-size: 1.45rem; font-weight: 800; margin-bottom: 10px; }
+  h3 { font-size: 1.05rem; font-weight: 800; }
+  p { margin: 0 0 12px; max-width: 62ch; }
+  section { margin-top: 48px; }
+  .meta { font-size: .9rem; color: var(--muted); margin-bottom: 12px; }
+  .lead { font-size: 1.08rem; color: var(--muted); margin-top: 14px; }
+  .demo-note { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); font-size: .93rem; color: var(--muted); }
+  .demo-note b { color: var(--ink); }
+  button { font: inherit; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- Tarjeta de escena ---------- */
+  .scene-card { background: var(--sc-bg); color: var(--sc-ink); border-radius: 18px; padding: 10px 12px 12px; border: 1px solid var(--sc-line); }
+  .scene-card svg.house { display: block; width: 100%; height: auto; max-height: 33vh; margin: 0 auto; }
+  .free .scene-card svg.house { max-height: 46vh; }
+  .compact .say, .compact .scn, .compact .scn-note { display: none; }
+  .compact svg.house { max-height: 30vh; }
+  .readout { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
+  .temp { font-family: var(--head); font-weight: 800; font-size: 2.4rem; line-height: 1; }
+  .temp small { font-size: 1.1rem; font-weight: 600; color: var(--sc-mut); margin-left: 3px; }
+  .chip { font-weight: 700; font-size: .95rem; padding: 7px 14px; border-radius: 999px; background: var(--g); color: #04200f; transition: background .35s, color .35s; }
+  .chip.s1 { background: var(--y); color: #2b1d00; }
+  .chip.s2 { background: var(--r); color: #fff; }
+  .pills { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  .pill { border: 1px solid var(--sc-line); border-radius: 12px; padding: 7px 6px; text-align: center; font-size: .78rem; line-height: 1.25; color: var(--sc-mut); transition: background .3s, color .3s, border-color .3s; }
+  .pill b { display: block; font-size: .85rem; font-weight: 600; color: inherit; }
+  .pill.on { background: #e8eef2; color: #0e1b26; border-color: #e8eef2; }
+  .pill.on.alert { background: #ff6a4d; border-color: #ff6a4d; color: #1d0500; }
+  .say { margin: 10px 2px 0; font-size: .95rem; font-weight: 500; min-height: 2.9em; color: var(--sc-ink); }
+  .scn { display: flex; gap: 8px; margin-top: 8px; }
+  .scn button { flex: 1; min-height: 44px; border-radius: 12px; border: 1px solid var(--sc-line); background: transparent; color: var(--sc-ink); font-weight: 600; cursor: pointer; }
+  .scn button[aria-pressed="true"] { background: #e8eef2; color: #0e1b26; border-color: #e8eef2; }
+  .scn-note { font-size: .82rem; color: var(--sc-mut); margin: 8px 2px 0; }
+  .ctl { margin-top: 12px; }
+  .ctl input[type=range] { width: 100%; height: 44px; accent-color: #6cc4e3; margin: 0; }
+  .scale { display: flex; justify-content: space-between; font-size: .8rem; color: var(--sc-mut); margin-top: -4px; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .btn { min-height: 46px; border-radius: 12px; border: 1px solid var(--sc-line); background: transparent; color: var(--sc-ink); font-weight: 600; cursor: pointer; padding: 6px 10px; }
+  .btn.primary { background: #6cc4e3; color: #06222d; border-color: #6cc4e3; }
+  .btn.wide { grid-column: 1 / -1; }
+  .btn[aria-pressed="true"] { background: #e8eef2; color: #0e1b26; }
+
+  /* ---------- Escena SVG ---------- */
+  .house text { font-family: var(--body); font-size: 11px; fill: #9fb0bd; }
+  .house .led { fill: #2a3b47; transition: fill .3s, filter .3s; }
+  .house .led.on.g { fill: #34d27b; filter: drop-shadow(0 0 5px #34d27b); }
+  .house .led.on.y { fill: #ffc83d; filter: drop-shadow(0 0 5px #ffc83d); }
+  .house .led.on.r { fill: #ff4a3a; filter: drop-shadow(0 0 6px #ff4a3a); }
+  .house .gate { transform-origin: 144px 83px; transition: transform 1s cubic-bezier(.3,.7,.2,1); }
+  .gate-open .house .gate { transform: rotate(-72deg); }
+  .house .vent { opacity: 0; transition: opacity .6s; }
+  .gate-open .house .vent { opacity: 1; }
+  .house .vent path { animation: ventrise 1.6s linear infinite; }
+  .house .vent path:nth-child(2) { animation-delay: .5s; }
+  .house .vent path:nth-child(3) { animation-delay: 1s; }
+  @keyframes ventrise { 0% { transform: translateY(8px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-14px); opacity: 0; } }
+  .house .blades { transform-origin: 72px 160px; animation: spin .45s linear infinite; animation-play-state: paused; }
+  .fan-on .house .blades { animation-play-state: running; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .house .air { opacity: 0; transition: opacity .4s; }
+  .fan-on .house .air { opacity: 1; }
+  .house .air line { stroke-dasharray: 5 7; animation: airflow .6s linear infinite; }
+  @keyframes airflow { to { stroke-dashoffset: -12; } }
+  .house .bw { opacity: 0; }
+  .buz-on .house .bw { animation: bw .8s ease-in-out infinite; }
+  .buz-on .house .bw.b2 { animation-delay: .15s; }
+  .buz-on .house .bw.b3 { animation-delay: .3s; }
+  @keyframes bw { 0% { opacity: 0; } 40% { opacity: 1; } 100% { opacity: 0; } }
+  .house .fl { animation: flick .55s ease-in-out infinite; }
+  .house .fw:nth-child(2) .fl { animation-duration: .7s; animation-delay: -.2s; }
+  .house .fw:nth-child(3) .fl { animation-duration: .6s; animation-delay: -.35s; }
+  @keyframes flick { 0%,100% { transform: scale(1,1) skewX(0deg); } 30% { transform: scale(.9,1.14) skewX(4deg); } 65% { transform: scale(1.07,.92) skewX(-4deg); } }
+  .house .smoke circle { animation: smokerise 3s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  .house .smoke circle:nth-child(2) { animation-delay: 1s; }
+  .house .smoke circle:nth-child(3) { animation-delay: 2s; }
+  @keyframes smokerise { 0% { transform: translateY(0) scale(.5); opacity: 0; } 25% { opacity: .5; } 100% { transform: translateY(-52px) scale(1.7); opacity: 0; } }
+  .house .hw path { animation: hrise 1.4s linear infinite; }
+  .house .hw path:nth-child(2) { animation-delay: .45s; }
+  .house .hw path:nth-child(3) { animation-delay: .9s; }
+  @keyframes hrise { 0% { transform: translateY(6px); opacity: 0; } 30% { opacity: .9; } 100% { transform: translateY(-20px); opacity: 0; } }
+  .house .sc-heat { display: none; }
+  [data-scn="heat"] .house .sc-heat { display: inline; }
+  [data-scn="heat"] .house .sc-fire, [data-scn="heat"] .house .sc-fire-obj { display: none; }
+
+  /* ---------- Historia con scroll ---------- */
+  .story-sticky { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 6px); z-index: 10; background: var(--bg); padding: 6px 0 10px; }
+  .steps { margin-top: 6px; }
+  .step-card { min-height: 52vh; display: flex; flex-direction: column; justify-content: center; padding: 18px; margin-bottom: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); opacity: .45; transition: opacity .5s, border-color .5s, transform .5s; }
+  .step-card.on { opacity: 1; border-color: var(--accent); }
+  .step-card .tt { font-family: var(--head); font-weight: 800; font-size: 1.9rem; color: var(--accent); line-height: 1; margin-bottom: 8px; }
+  .step-card p { margin: 6px 0 0; }
+  .steps-end { height: 8vh; }
+
+  /* ---------- Flujo ---------- */
+  .flow { display: grid; gap: 10px; counter-reset: s; }
+  .flow .st { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 14px 56px; position: relative; }
+  .flow .st::before { counter-increment: s; content: counter(s); position: absolute; left: 14px; top: 14px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-family: var(--head); font-weight: 800; display: grid; place-items: center; }
+  .flow .st b { font-family: var(--head); font-size: 1.1rem; display: block; }
+  .flow .st span { color: var(--muted); font-size: .98rem; }
+
+  /* ---------- Niveles ---------- */
+  .lv { background: var(--surface); border: 1px solid var(--line); border-left: 8px solid var(--g); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
+  .lv.y { border-left-color: var(--y); } .lv.r { border-left-color: var(--r); }
+  .lv h3 { margin-bottom: 8px; }
+  .lv dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; font-size: .97rem; }
+  .lv dt { color: var(--muted); } .lv dd { margin: 0; font-weight: 600; }
+
+  /* ---------- Acordeón ---------- */
+  .acc { border: 1px solid var(--line); background: var(--surface); border-radius: 14px; margin-bottom: 10px; overflow: hidden; }
+  .acc-btn { width: 100%; min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; background: transparent; border: 0; color: var(--ink); padding: 12px 16px; cursor: pointer; font-family: var(--head); font-weight: 800; font-size: 1.05rem; }
+  .acc-btn .ch { flex: none; width: 22px; height: 22px; transition: transform .35s; color: var(--accent); }
+  .acc.open .ch { transform: rotate(180deg); }
+  .acc-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .4s ease; }
+  .acc.open .acc-body { grid-template-rows: 1fr; }
+  .acc-in { overflow: hidden; visibility: hidden; transition: visibility .4s; padding: 0 16px; }
+  .acc.open .acc-in { visibility: visible; }
+  .acc-in > :first-child { margin-top: 0; }
+  .acc-in > :last-child { margin-bottom: 16px; }
+  .acc-in .ana { background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 10px; padding: 10px 12px; font-size: .96rem; }
+  .acc-in code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; background: color-mix(in srgb, var(--ink) 8%, transparent); padding: 1px 5px; border-radius: 5px; }
+
+  ul.plain { margin: 0; padding-left: 20px; } ul.plain li { margin-bottom: 8px; max-width: 62ch; }
+  .warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: 14px; padding: 18px; }
+  .warn h2 { color: inherit; font-size: 1.2rem; } .warn ul { margin: 0; padding-left: 20px; } .warn li { margin-bottom: 7px; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: .92rem; }
+
+  /* ---------- Aparición suave ---------- */
+  .js .rv { opacity: 0; transform: translateY(16px); transition: opacity .7s ease, transform .7s ease; }
+  .js .rv.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .js .rv { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <header class="rv">
+    <p class="meta">Proyecto escolar, Santa Cruz, Bolivia, gestión 2026</p>
+    <h1>Sistema automático de monitoreo y respuesta ante aumento de temperatura con Arduino</h1>
+    <p class="lead">Una maqueta de una vivienda que mide la temperatura y reacciona sola: enciende luces de colores, activa un ventilador, hace sonar una alarma y abre una compuerta en el techo.</p>
+    <p class="demo-note"><b>Esta página es una demostración animada.</b> Las temperaturas que ves aquí son simuladas y no vienen en vivo de la maqueta. Sirve para entender cómo reacciona el sistema.</p>
+  </header>
+
+  <!-- HISTORIA -->
+  <section class="story" id="story">
+    <h2 class="rv">Mira qué pasa cuando sube el calor</h2>
+    <p class="rv">Desliza hacia abajo. La casa de arriba se calienta y responde igual que la maqueta real.</p>
+    <div class="story-sticky"><div id="storyScene"></div></div>
+    <div class="steps" id="steps">
+      <article class="step-card" data-temp="24">
+        <div class="tt">24 °C</div>
+        <h3>Todo en calma</h3>
+        <p>El sensor mide la temperatura de la habitación. Está por debajo de 30 °C, así que se encienden los LED verdes y todo lo demás permanece apagado.</p>
+      </article>
+      <article class="step-card" data-temp="29">
+        <div class="tt">29 °C</div>
+        <h3>Algo empieza a calentarse</h3>
+        <p>Aparece una fuente de calor dentro de la casa. Aunque la temperatura sube, todavía no llega a 30 °C. El sistema sigue vigilando y revisa la temperatura cada 2 segundos.</p>
+      </article>
+      <article class="step-card" data-temp="34">
+        <div class="tt">34 °C</div>
+        <h3>Nivel amarillo: atención</h3>
+        <p>Al llegar a 30 °C, los LED cambian a amarillo y Arduino ordena encender el ventilador. El ventilador mueve el aire de la habitación.</p>
+      </article>
+      <article class="step-card" data-temp="43">
+        <div class="tt">43 °C</div>
+        <h3>Nivel rojo: alerta</h3>
+        <p>Desde 40 °C se encienden los LED rojos, suena la alarma (un tono de 1000 Hz) y un pequeño motor abre la compuerta del techo. El ventilador sigue encendido.</p>
+      </article>
+      <article class="step-card" data-temp="27">
+        <div class="tt">27 °C</div>
+        <h3>Vuelve la calma</h3>
+        <p>Cuando la temperatura baja de 30 °C, el sistema regresa solo al verde: se apaga el ventilador, se calla la alarma y la compuerta se cierra.</p>
+      </article>
+      <div class="steps-end"></div>
+    </div>
+  </section>
+
+  <!-- MODO LIBRE -->
+  <section class="free" id="free">
+    <h2 class="rv">Ahora controlas tú</h2>
+    <p class="rv">Mueve la barra de temperatura o pulsa <b>Simular calentamiento</b>. Elige también qué provoca el calor: un incendio o una estufa que se sobrecalienta.</p>
+    <div class="rv" id="freeScene"></div>
+    <p class="rv" style="margin-top:12px;font-size:.93rem;color:var(--muted)">El tiempo está acelerado para que puedas ver todo en segundos. En una habitación real el calor sube mucho más despacio.</p>
+  </section>
+
+  <!-- CÓMO FUNCIONA -->
+  <section>
+    <h2 class="rv">Cómo funciona, en tres pasos</h2>
+    <div class="flow">
+      <div class="st rv"><b>Mide</b><span>El sensor DHT11 lee la temperatura del ambiente cada 2 segundos.</span></div>
+      <div class="st rv"><b>Decide</b><span>Una placa Arduino UNO compara el número con dos límites: 30 °C y 40 °C, y elige un estado: verde, amarillo o rojo.</span></div>
+      <div class="st rv"><b>Actúa</b><span>Según el estado, enciende luces, activa el ventilador por medio de un relay, hace sonar el buzzer y mueve la compuerta con un servomotor.</span></div>
+    </div>
+    <p class="rv" style="margin-top:12px;color:var(--muted);font-size:.95rem">En electrónica a esto se le llama sistema <b>sensor, controlador y actuador</b>: algo que mide, algo que decide y algo que hace.</p>
+  </section>
+
+  <!-- NIVELES -->
+  <section>
+    <h2 class="rv">Los tres estados del sistema</h2>
+    <div class="lv rv"><h3>Verde: menos de 30 °C</h3>
+      <dl><dt>Luces</dt><dd>2 LED verdes</dd><dt>Ventilador</dt><dd>Apagado</dd><dt>Alarma</dt><dd>Apagada</dd><dt>Compuerta</dt><dd>Cerrada (90°)</dd></dl></div>
+    <div class="lv y rv"><h3>Amarillo: de 30 °C a menos de 40 °C</h3>
+      <dl><dt>Luces</dt><dd>2 LED amarillos</dd><dt>Ventilador</dt><dd>Encendido</dd><dt>Alarma</dt><dd>Apagada</dd><dt>Compuerta</dt><dd>Cerrada (90°)</dd></dl></div>
+    <div class="lv r rv"><h3>Rojo: 40 °C o más</h3>
+      <dl><dt>Luces</dt><dd>2 LED rojos</dd><dt>Ventilador</dt><dd>Encendido</dd><dt>Alarma</dt><dd>Encendida (1000 Hz)</dd><dt>Compuerta</dt><dd>Abierta (180°)</dd></dl></div>
+    <p class="rv" style="color:var(--muted);font-size:.93rem">La maqueta tiene 6 LED, pero solo 3 estados. Cada color está repetido dos veces para que el estado se vea desde dos lugares distintos, incluso desde donde está el buzzer. Los límites de 30 °C y 40 °C se eligieron solo para poder hacer la demostración con seguridad.</p>
+  </section>
+
+  <!-- CONCEPTOS -->
+  <section>
+    <h2 class="rv">Conceptos explicados fácil</h2>
+    <p class="rv">Toca cada tema para abrirlo.</p>
+    <div id="accs"></div>
+  </section>
+
+  <!-- COMPONENTES -->
+  <section>
+    <h2 class="rv">Qué lleva la maqueta</h2>
+    <ul class="plain rv">
+      <li><b>Arduino UNO:</b> el cerebro que procesa y controla.</li>
+      <li><b>Sensor DHT11:</b> mide temperatura y humedad.</li>
+      <li><b>6 LED con resistencias:</b> 2 verdes, 2 amarillos y 2 rojos.</li>
+      <li><b>Buzzer pasivo:</b> produce la alarma sonora.</li>
+      <li><b>Módulo relay:</b> permite que Arduino encienda el ventilador.</li>
+      <li><b>Ventilador de 12 V:</b> mueve el aire.</li>
+      <li><b>Fuente externa de 9 V:</b> alimenta solo al ventilador.</li>
+      <li><b>Servomotor SG90:</b> abre y cierra la compuerta superior.</li>
+      <li><b>Protoboard, cables jumper y estructura:</b> unen y sostienen todo.</li>
+    </ul>
+  </section>
+
+  <section class="warn rv">
+    <h2>Importante</h2>
+    <ul>
+      <li>Es una maqueta educativa. No es un detector de incendios.</li>
+      <li>El DHT11 mide temperatura y humedad. No detecta humo, llamas ni gases.</li>
+      <li>Los valores de 30 °C y 40 °C son solo para la demostración.</li>
+      <li>Un sistema real de seguridad necesita equipos certificados e instalación profesional.</li>
+    </ul>
+  </section>
+
+  <footer>Gracias por visitar nuestro proyecto. Santa Cruz, Bolivia, 2026.</footer>
+</main>
+
+<script>
+(function () {
+  document.documentElement.classList.add('js');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var scenes = [];
+  var scenario = 'fire';
+  var uidc = 0;
+
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function lerp(a, b, k) { return a + (b - a) * k; }
+  function roomColor(I) {
+    var c0 = [30, 58, 74], c1 = [84, 52, 34], c2 = [128, 32, 26], a, b, k;
+    if (I < .5) { a = c0; b = c1; k = I / .5; } else { a = c1; b = c2; k = (I - .5) / .5; }
+    return 'rgb(' + Math.round(lerp(a[0], b[0], k)) + ',' + Math.round(lerp(a[1], b[1], k)) + ',' + Math.round(lerp(a[2], b[2], k)) + ')';
+  }
+
+  /* ---------- Sonido opcional (solo modo libre) ---------- */
+  var audio = null, osc = null;
+  function sound(on) {
+    try {
+      if (on && !osc) {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+        osc = audio.createOscillator(); osc.type = 'square'; osc.frequency.value = 1000;
+        var g = audio.createGain(); g.gain.value = 0.04; osc.connect(g); g.connect(audio.destination); osc.start();
+      } else if (!on && osc) { osc.stop(); osc.disconnect(); osc = null; }
+    } catch (e) { osc = null; }
+  }
+  document.addEventListener('visibilitychange', function () { if (document.hidden) sound(false); });
+
+  /* ---------- Plantilla de escena ---------- */
+  function svgMarkup(u) {
+    return '' +
+    '<svg class="house" viewBox="0 0 360 250" role="img" aria-label="Corte de una casa a escala con sensor, LED, buzzer, ventilador y compuerta en el techo">' +
+    '<defs><radialGradient id="gl-' + u + '" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffb45c" stop-opacity=".95"/><stop offset="1" stop-color="#ff5a2a" stop-opacity="0"/></radialGradient>' +
+    '<clipPath id="cl-' + u + '"><rect x="42" y="90" width="276" height="140"/></clipPath></defs>' +
+    '<rect x="0" y="232" width="360" height="18" fill="#08121a"/>' +
+    '<rect class="room" x="42" y="90" width="276" height="140" fill="#1e3a4a"/>' +
+    '<g clip-path="url(#cl-' + u + ')"><circle class="glow" cx="179" cy="205" r="60" fill="url(#gl-' + u + ')" opacity="0"/></g>' +
+    /* mueble (incendio) */
+    '<g class="sc-fire-obj"><rect x="148" y="206" width="62" height="26" rx="4" fill="#2a3b46"/><rect x="148" y="198" width="62" height="12" rx="4" fill="#35495a"/></g>' +
+    /* estufa (calentamiento) */
+    '<g class="sc-heat"><rect x="154" y="206" width="50" height="26" rx="3" fill="#3b4a54"/>' +
+    '<g class="coils" stroke="#ff7a3a" stroke-width="3" stroke-linecap="round" opacity=".12"><line x1="164" y1="212" x2="164" y2="226"/><line x1="172" y1="212" x2="172" y2="226"/><line x1="180" y1="212" x2="180" y2="226"/><line x1="188" y1="212" x2="188" y2="226"/><line x1="196" y1="212" x2="196" y2="226"/></g>' +
+    '<g class="hw" opacity="0" fill="none" stroke="#ffb27a" stroke-width="2" stroke-linecap="round"><path d="M165 202 q5 -7 0 -14 t0 -14"/><path d="M179 202 q5 -7 0 -14 t0 -14"/><path d="M193 202 q5 -7 0 -14 t0 -14"/></g></g>' +
+    /* fuego */
+    '<g class="sc-fire"><g transform="translate(179 200)"><g class="fscale" style="opacity:0;transform:scale(.25)">' +
+      '<g class="fw" transform="translate(-16 0) scale(.8)"><g class="fl"><path d="M0 0 C-11 -3 -13 -17 -5 -28 C-4 -19 1 -17 2 -24 C11 -15 12 -4 0 0Z" fill="#ff5a2b"/><path d="M0 -1 C-5 -2 -6 -9 -2 -14 C0 -10 3 -9 3 -12 C6 -7 5 -2 0 -1Z" fill="#ffd25a"/></g></g>' +
+      '<g class="fw" transform="translate(0 0) scale(1.1)"><g class="fl"><path d="M0 0 C-11 -3 -13 -17 -5 -28 C-4 -19 1 -17 2 -24 C11 -15 12 -4 0 0Z" fill="#ff6a2b"/><path d="M0 -1 C-5 -2 -6 -9 -2 -14 C0 -10 3 -9 3 -12 C6 -7 5 -2 0 -1Z" fill="#ffd25a"/></g></g>' +
+      '<g class="fw" transform="translate(15 0) scale(.7)"><g class="fl"><path d="M0 0 C-11 -3 -13 -17 -5 -28 C-4 -19 1 -17 2 -24 C11 -15 12 -4 0 0Z" fill="#ff4a2b"/><path d="M0 -1 C-5 -2 -6 -9 -2 -14 C0 -10 3 -9 3 -12 C6 -7 5 -2 0 -1Z" fill="#ffd25a"/></g></g>' +
+    '</g></g>' +
+    '<g class="smoke" opacity="0" fill="#9aa6af"><circle cx="170" cy="170" r="9"/><circle cx="186" cy="165" r="10"/><circle cx="178" cy="160" r="8"/></g></g>' +
+    /* ventilador */
+    '<circle cx="72" cy="160" r="24" fill="#16242d" stroke="#8fa6b4" stroke-width="3"/>' +
+    '<g class="blades"><ellipse cx="72" cy="148" rx="6" ry="11" fill="#c9d6de"/><ellipse cx="72" cy="148" rx="6" ry="11" fill="#c9d6de" transform="rotate(120 72 160)"/><ellipse cx="72" cy="148" rx="6" ry="11" fill="#c9d6de" transform="rotate(240 72 160)"/></g>' +
+    '<circle cx="72" cy="160" r="4" fill="#8fa6b4"/>' +
+    '<g class="air" stroke="#9fd7ee" stroke-width="2" stroke-linecap="round"><line x1="100" y1="150" x2="130" y2="150"/><line x1="100" y1="160" x2="134" y2="160"/><line x1="100" y1="170" x2="130" y2="170"/></g>' +
+    '<text x="72" y="196" text-anchor="middle">ventilador</text>' +
+    /* LED A */
+    '<rect x="112" y="106" width="60" height="28" rx="7" fill="#0f1a21"/>' +
+    '<circle class="led g" data-s="0" cx="126" cy="120" r="6"/><circle class="led y" data-s="1" cx="142" cy="120" r="6"/><circle class="led r" data-s="2" cx="158" cy="120" r="6"/>' +
+    '<text x="142" y="148" text-anchor="middle">LED</text>' +
+    /* buzzer */
+    '<rect x="184" y="108" width="24" height="16" rx="4" fill="#0f1a21" stroke="#8fa6b4" stroke-width="1.5"/><circle cx="196" cy="116" r="4" fill="#c9d6de"/>' +
+    '<g fill="none" stroke="#ffd25a" stroke-width="2" stroke-linecap="round"><path class="bw b1" d="M212 109 q6 7 0 14"/><path class="bw b2" d="M217 106 q9 10 0 20"/><path class="bw b3" d="M222 103 q12 13 0 26"/></g>' +
+    '<text x="196" y="140" text-anchor="middle">buzzer</text>' +
+    /* LED B */
+    '<rect x="234" y="106" width="50" height="28" rx="7" fill="#0f1a21"/>' +
+    '<circle class="led g" data-s="0" cx="247" cy="120" r="5.5"/><circle class="led y" data-s="1" cx="259" cy="120" r="5.5"/><circle class="led r" data-s="2" cx="271" cy="120" r="5.5"/>' +
+    '<text x="259" y="148" text-anchor="middle">LED</text>' +
+    /* sensor */
+    '<rect x="292" y="116" width="16" height="28" rx="3" fill="#3a86c9"/><line x1="296" y1="122" x2="304" y2="122" stroke="#1c4f7c" stroke-width="2"/><line x1="296" y1="128" x2="304" y2="128" stroke="#1c4f7c" stroke-width="2"/><line x1="296" y1="134" x2="304" y2="134" stroke="#1c4f7c" stroke-width="2"/>' +
+    '<text x="296" y="160" text-anchor="middle">sensor</text>' +
+    /* paredes y techo */
+    '<rect x="42" y="90" width="276" height="140" fill="none" stroke="#8fa6b4" stroke-width="4"/>' +
+    '<rect x="32" y="78" width="112" height="10" rx="2" fill="#8fa6b4"/><rect x="216" y="78" width="112" height="10" rx="2" fill="#8fa6b4"/>' +
+    '<g class="gate"><rect x="144" y="78" width="72" height="10" rx="2" fill="#dbe5ea"/></g>' +
+    '<g class="vent" fill="none" stroke="#ffb27a" stroke-width="2" stroke-linecap="round"><path d="M166 74 q5 -7 0 -14 t0 -14"/><path d="M180 74 q5 -7 0 -14 t0 -14"/><path d="M194 74 q5 -7 0 -14 t0 -14"/></g>' +
+    '<text x="86" y="70" text-anchor="middle">compuerta</text>' +
+    '</svg>';
+  }
+
+  function createScene(root, opts) {
+    var u = 's' + (++uidc);
+    var free = !!opts.free;
+    root.innerHTML =
+      '<div class="scene-card' + (opts.free ? '' : ' compact') + '" data-scn="' + scenario + '">' + svgMarkup(u) +
+      '<div class="readout"><div class="temp"><span class="tv">24</span><small>°C</small></div><div class="chip s0">Verde: normal</div></div>' +
+      '<div class="pills"><div class="pill pf"><b>Ventilador</b><span>apagado</span></div><div class="pill pb"><b>Alarma</b><span>apagada</span></div><div class="pill pg"><b>Compuerta</b><span>cerrada, 90°</span></div></div>' +
+      '<p class="say" aria-live="polite"></p>' +
+      '<div class="scn" role="group" aria-label="Causa del calor"><button type="button" data-s="fire" aria-pressed="true">Incendio</button><button type="button" data-s="heat" aria-pressed="false">Estufa</button></div>' +
+      '<p class="scn-note"></p>' +
+      (free ? '<div class="ctl"><input class="sl" type="range" min="20" max="50" step="1" value="24" aria-label="Temperatura simulada en grados Celsius"><div class="scale"><span>20 °C</span><span>30</span><span>40</span><span>50 °C</span></div>' +
+        '<div class="btns"><button type="button" class="btn primary play">Simular calentamiento</button><button type="button" class="btn cool">Enfriar</button>' +
+        '<button type="button" class="btn wide snd" aria-pressed="false">Sonido de la alarma: apagado</button></div></div>' : '') +
+      '</div>';
+
+    var card = root.querySelector('.scene-card');
+    var q = function (s) { return card.querySelector(s); };
+    var room = q('.room'), glow = q('.glow'), fscale = q('.fscale'), smoke = q('.smoke'), coils = q('.coils'), hw = q('.hw');
+    var tv = q('.tv'), chip = q('.chip'), pf = q('.pf'), pb = q('.pb'), pg = q('.pg'), say = q('.say'), note = q('.scn-note');
+    var leds = card.querySelectorAll('.led');
+    var sl = q('.sl');
+    var cur = 24, raf = null, last = -1, soundOn = false;
+
+    var msgs = [
+      'Estado verde: todo normal. LED verdes encendidos.',
+      'Estado amarillo: LED amarillos y ventilador encendido.',
+      'Estado rojo: alarma sonando, ventilador activo y compuerta abierta.'
+    ];
+
+    function render() {
+      var shown = Math.round(cur);
+      var st = shown < 30 ? 0 : (shown < 40 ? 1 : 2);
+      var I = clamp((cur - 26) / 20, 0, 1);
+      tv.textContent = shown;
+      if (sl && document.activeElement !== sl) sl.value = shown;
+      room.setAttribute('fill', roomColor(I));
+      glow.setAttribute('opacity', (I * .9).toFixed(2));
+      glow.setAttribute('r', (60 + 60 * I).toFixed(0));
+      fscale.style.transform = 'scale(' + (0.25 + 1.75 * I).toFixed(3) + ')';
+      fscale.style.opacity = Math.min(1, I * 8).toFixed(2);
+      smoke.setAttribute('opacity', clamp((I - .3) / .4, 0, 1).toFixed(2));
+      coils.setAttribute('opacity', (0.12 + 0.88 * I).toFixed(2));
+      hw.setAttribute('opacity', Math.min(1, I * 5).toFixed(2));
+      if (st !== last) {
+        last = st;
+        chip.className = 'chip s' + st;
+        chip.textContent = ['Verde: normal', 'Amarillo: atención', 'Rojo: alerta'][st];
+        card.classList.toggle('fan-on', st >= 1);
+        card.classList.toggle('buz-on', st >= 2);
+        card.classList.toggle('gate-open', st >= 2);
+        pf.classList.toggle('on', st >= 1); pf.lastChild.textContent = st >= 1 ? 'encendido' : 'apagado';
+        pb.classList.toggle('on', st >= 2); pb.classList.toggle('alert', st >= 2); pb.lastChild.textContent = st >= 2 ? '1000 Hz' : 'apagada';
+        pg.classList.toggle('on', st >= 2); pg.lastChild.textContent = st >= 2 ? 'abierta, 180°' : 'cerrada, 90°';
+        for (var i = 0; i < leds.length; i++) leds[i].classList.toggle('on', parseInt(leds[i].getAttribute('data-s'), 10) === st);
+        say.textContent = msgs[st];
+        if (free) sound(soundOn && st === 2);
+      }
+    }
+
+    function applyTemp(v) { cur = v; render(); }
+    function tween(to, ms, linear) {
+      if (raf) cancelAnimationFrame(raf);
+      raf = null;
+      var from = cur;
+      if (reduce || ms <= 0 || from === to) { applyTemp(to); return; }
+      var t0 = null;
+      function tick(ts) {
+        if (t0 === null) t0 = ts;
+        var k = Math.min(1, (ts - t0) / ms);
+        var e = linear ? k : (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+        applyTemp(from + (to - from) * e);
+        if (k < 1) raf = requestAnimationFrame(tick); else raf = null;
+      }
+      raf = requestAnimationFrame(tick);
+    }
+
+    function setScenario(s) {
+      card.setAttribute('data-scn', s);
+      var bs = card.querySelectorAll('.scn button');
+      for (var i = 0; i < bs.length; i++) bs[i].setAttribute('aria-pressed', bs[i].getAttribute('data-s') === s ? 'true' : 'false');
+      note.textContent = s === 'fire'
+        ? 'Un mueble se incendia. El humo es solo decoración: el sensor DHT11 no puede detectarlo, solo mide temperatura.'
+        : 'Una estufa eléctrica se sobrecalienta. El sistema reacciona igual: solo le importa el número de grados.';
+    }
+
+    var sb = card.querySelectorAll('.scn button');
+    for (var i = 0; i < sb.length; i++) sb[i].addEventListener('click', function () { scenario = this.getAttribute('data-s'); scenes.forEach(function (sc) { sc.setScenario(scenario); }); });
+
+    if (free) {
+      sl.addEventListener('input', function () { if (raf) { cancelAnimationFrame(raf); raf = null; } applyTemp(parseInt(sl.value, 10)); });
+      q('.play').addEventListener('click', function () { applyTemp(24); tween(46, 15000, true); });
+      q('.cool').addEventListener('click', function () { tween(24, 5000, false); });
+      var snd = q('.snd');
+      snd.addEventListener('click', function () {
+        soundOn = !soundOn;
+        snd.setAttribute('aria-pressed', soundOn ? 'true' : 'false');
+        snd.textContent = 'Sonido de la alarma: ' + (soundOn ? 'encendido' : 'apagado');
+        sound(soundOn && last === 2);
+      });
+    }
+
+    var api = { setTemp: function (t, ms) { tween(t, ms, false); }, setScenario: setScenario };
+    setScenario(scenario);
+    render();
+    scenes.push(api);
+    return api;
+  }
+
+  var story = createScene(document.getElementById('storyScene'), { free: false });
+  createScene(document.getElementById('freeScene'), { free: true });
+
+  /* ---------- Pasos con scroll ---------- */
+  var steps = document.querySelectorAll('.step-card');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (e.isIntersecting) {
+          for (var i = 0; i < steps.length; i++) steps[i].classList.remove('on');
+          e.target.classList.add('on');
+          story.setTemp(parseFloat(e.target.getAttribute('data-temp')), 1800);
+        }
+      });
+    }, { rootMargin: '-62% 0px -30% 0px' });
+    for (var i = 0; i < steps.length; i++) io.observe(steps[i]);
+  } else { for (var j = 0; j < steps.length; j++) steps[j].classList.add('on'); }
+  steps[0].classList.add('on');
+
+  /* ---------- Conceptos (acordeón) ---------- */
+  var concepts = [
+    { t: 'Arduino UNO: el cerebro',
+      b: '<p>Es una pequeña placa electrónica que contiene un microcontrolador, algo así como un mini computador que solo sabe hacer lo que le programamos. Tiene 14 pines digitales: son como puertitos donde se conectan sensores, luces y motores. Funciona con 5 voltios.</p><p class="ana">Imagina un cocinero que sigue una receta una y otra vez: lee la temperatura, decide qué hacer y repite. Esa receta es el programa que escribimos.</p>' },
+    { t: 'Sensor DHT11: el termómetro electrónico',
+      b: '<p>Mide la temperatura y la humedad del aire y las envía a Arduino como números. Por dentro tiene un componente cuya resistencia eléctrica cambia con el calor, y un pequeño circuito que convierte eso en un dato digital.</p><p>Puede medir de −20 °C a 60 °C, con un margen de error de ±2 °C. Entrega un dato nuevo cada 2 segundos o más, por eso el programa lee la temperatura cada 2 segundos.</p><p class="ana">Es muy bueno para aprender, pero no es un instrumento profesional.</p>' },
+    { t: 'LED y resistencia: el semáforo',
+      b: '<p>Un LED es una lucecita que se enciende cuando le pasa corriente eléctrica. Si pasa demasiada, se quema. Por eso cada LED lleva una <b>resistencia</b> de 220 Ω o 330 Ω, que funciona como un freno de seguridad.</p><p>Hay 6 LED pero solo 3 estados: verde (normal), amarillo (atención) y rojo (alerta). Cada color está repetido dos veces para que el estado se vea desde dos lugares de la maqueta, incluso desde donde está el buzzer.</p>' },
+    { t: 'Buzzer pasivo: la alarma',
+      b: '<p>Un buzzer convierte electricidad en sonido. Existen dos tipos. El <b>activo</b> suena solo con darle corriente, como un timbre. El <b>pasivo</b> es como un parlante diminuto: necesita que le envíen una señal que vibra para saber qué nota tocar.</p><p>El nuestro es pasivo. Lo descubrimos porque al encenderlo de forma simple solo hacía un chasquido. Con la función <code>tone()</code> de Arduino ahora toca un tono de 1000 Hz, es decir, mil vibraciones por segundo, y suena de forma continua.</p>' },
+    { t: 'Relay: el interruptor que obedece',
+      b: '<p>El ventilador necesita más energía de la que un pin de Arduino puede entregar sin dañarse. Para resolverlo se usa un <b>relay</b>: un interruptor que se cierra con una señal eléctrica pequeña.</p><p>Arduino da la orden y el relay hace el trabajo pesado: conecta el ventilador a una fuente externa de 9 V. Se usa el contacto <b>normalmente abierto</b> (NO), así el ventilador permanece apagado mientras no haya una orden.</p><p class="ana">Es como pedirle a alguien fuerte que mueva la puerta pesada por ti: tú solo haces una seña.</p>' },
+    { t: 'Servomotor SG90: la compuerta',
+      b: '<p>Es un motor muy pequeño, de unos 9 gramos, que no gira sin parar: se mueve hasta un ángulo exacto y se queda ahí.</p><p>En la maqueta, con 90° la compuerta del techo queda cerrada, y con 180° se abre. Representa una salida de ventilación en la parte alta de la vivienda.</p>' },
+    { t: 'Programación por condiciones: «si… entonces»',
+      b: '<p>El programa toma decisiones con preguntas simples, en orden:</p><p class="ana">Si la temperatura es 40 °C o más, entonces estado rojo.<br>Si no, pero es 30 °C o más, entonces estado amarillo.<br>Si no, estado verde.</p><p>Si el sensor falla y no entrega un valor válido, el sistema pasa a un <b>estado seguro</b>: apaga las luces, el ventilador y la alarma, y mantiene la compuerta cerrada.</p>' },
+    { t: '¿Por qué no es un detector de incendios?',
+      b: '<p>Una temperatura alta no significa necesariamente que haya un incendio: puede deberse al sol, a una estufa o a un equipo sobrecalentado. Y un incendio real puede producir humo o gases que este sensor no detecta.</p><p>Los sistemas reales de seguridad usan detectores certificados de humo, calor, llama o gases, con instalación y mantenimiento profesionales. Los límites de 30 °C y 40 °C de esta maqueta se escogieron solo para poder mostrar cada etapa de forma segura.</p>' }
+  ];
+  var accs = document.getElementById('accs');
+  var chev = '<svg class="ch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  concepts.forEach(function (c, i) {
+    var d = document.createElement('div');
+    d.className = 'acc rv';
+    d.innerHTML = '<button type="button" class="acc-btn" aria-expanded="false" aria-controls="acc-' + i + '"><span>' + c.t + '</span>' + chev + '</button>' +
+      '<div class="acc-body" id="acc-' + i + '" role="region"><div class="acc-in">' + c.b + '</div></div>';
+    d.querySelector('.acc-btn').addEventListener('click', function () {
+      var open = d.classList.toggle('open');
+      this.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    accs.appendChild(d);
+  });
+
+  /* ---------- Aparición suave ---------- */
+  var rv = document.querySelectorAll('.rv');
+  if ('IntersectionObserver' in window) {
+    var io2 = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io2.unobserve(e.target); } });
+    }, { threshold: 0.12 });
+    for (var k = 0; k < rv.length; k++) io2.observe(rv[k]);
+  } else { for (var m = 0; m < rv.length; m++) rv[m].classList.add('in'); }
+})();
+</script>
+</body>
+</html>
